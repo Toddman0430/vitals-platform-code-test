@@ -31,7 +31,7 @@ def factor_in_expiration_dates(award)
               award.quality -= 1 unless blue_distinction_plus?(award.name)
           end :
           award.quality = award.quality - award.quality :
-      award.quality += 1 unless !quality_ceiling?(award.quality) if award.expires_in < 0
+      award.quality += 1 if quality_ceiling?(award.quality) if award.expires_in < 0
 end
 
 def quality_ceiling?(quality)
