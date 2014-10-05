@@ -1,55 +1,100 @@
 require 'award'
 
 def update_quality(awards)
-  awards.each do |award|
-    initial_quality = award.quality
-    compute_with_blue_first_and_compare(award)
-    award.expires_in -= 1 unless blue_distinction_plus?(award.name)
-    factor_in_expiration_dates(award)
-    quality_decrease = initial_quality - award.quality
-    award.quality -= quality_decrease if blue_star?(award.name) && quality_decrease >= 1
+  QualityUpdater.new.update(awards)
+end
+
+#Factored class out of updater functionality.
+
+class QualityUpdater
+  def update(awards)
+    awards.each do |award|
+      update_an(award)
+    end
   end
-end
 
-def compute_with_blue_first_and_compare(award)
-  ceiling = quality_ceiling?(award.quality)
-  !blue_first?(award.name) && !blue_compare?(award.name) ?
-      (award.quality -= 1 if !blue_distinction_plus?(award.name) if award.quality > 0) :
-      if ceiling
-        award.quality += 1
-        if blue_compare?(award.name)
-          award.quality += 1 if ceiling if award.expires_in < 11
-          award.quality += 1 if ceiling if award.expires_in < 6
-        end
+  def update_an(award)
+    updater_for(award).update(award)
+  end
+
+#Make sure we have plans to work with.
+
+  def updater_for(award)
+    pair = UPDATERS.find do |name, updater|
+      name =~ award.name
+    end
+    updater = pair ? pair[1] : standard_updater
+  end
+
+  def standard_updater
+    @standard_handler ||= BaseQualityUpdater.new
+  end
+
+#Inner base class for standard operations.
+
+  class BaseQualityUpdater
+    def update(award)
+      update_quality(award)
+      update_expires_in(award)
+    end
+
+    def update_quality(award)
+      (award.expires_in <= 0) ? modify_quality(award, -2) : modify_quality(award, -1)
+    end
+
+    def update_expires_in(award)
+      award.expires_in -= 1
+    end
+
+    def modify_quality(award, amount)
+      award.quality += amount
+      award.quality = 50 if award.quality > 50
+      award.quality = 0 if award.quality < 0
+    end
+  end
+
+  #Subclasses based on plan type.
+
+  class BlueDistinctionPlusQualityUpdater < BaseQualityUpdater
+    def update_quality(award)
+    end
+    def update_expires_in(award)
+    end
+  end
+
+  class BlueFirstQualityUpdater < BaseQualityUpdater
+    def update_quality(award)
+      (award.expires_in <= 0) ? modify_quality(award, 2) : modify_quality(award, 1)
+    end
+  end
+
+  class BlueCompareQualityUpdater < BaseQualityUpdater
+    def update_quality(award)
+      if award.expires_in > 10
+        modify_quality(award, 1)
+      elsif award.expires_in > 5
+        modify_quality(award, 2)
+      elsif award.expires_in > 0
+        modify_quality(award, 3)
+      else
+        award.quality = 0
       end
-end
+    end
+  end
 
-def factor_in_expiration_dates(award)
-  !blue_first?(award.name) ?
-      !blue_compare?(award.name) ?
-          if award.quality > 0
-              award.quality -= 1 unless blue_distinction_plus?(award.name)
-          end :
-          award.quality = award.quality - award.quality :
-      award.quality += 1 if quality_ceiling?(award.quality) if award.expires_in < 0
-end
+  class BlueStarQualityUpdater < BaseQualityUpdater
+    def update_quality(award)
+      (award.expires_in <= 0) ? modify_quality(award, -4) : modify_quality(award, -2)
+    end
+  end
 
-def quality_ceiling?(quality)
-  quality < 50
-end
+#'Configuration'. Instead of magic strings, use regexes to map plan type to quality logic.
+  UPDATERS = [
+      [/^Blue Distinction Plus$/, BlueDistinctionPlusQualityUpdater.new],
+      [/^Blue First$/, BlueFirstQualityUpdater.new],
+      [/^Blue Compare$/, BlueCompareQualityUpdater.new],
+      [/^Blue Star$/, BlueStarQualityUpdater.new],
+  ]
 
-def blue_compare?(name)
-  name == 'Blue Compare'
-end
 
-def blue_distinction_plus?(name)
-  name == 'Blue Distinction Plus'
-end
-
-def blue_star?(name)
-  name == 'Blue Star'
-end
-
-def blue_first?(name)
-  name == 'Blue First'
 end
